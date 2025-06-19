@@ -1,109 +1,98 @@
 import System.Random
 import Data.List
 
-type Color     = String
-type Colors    = [Color]
+-- Type definitions
+type Color  = String
+type Colors = [Color]
+type Row    = [Color]
+type Answer = (Int, Int) -- (Black pegs, White pegs)
+type Board  = [(Row, Answer)] -- List of guesses and their corresponding answers
 
+-- Available colors
 colors :: Colors
 colors = ["blue", "red", "yellow", "green", "white"]
 
-
---  Row represents a row on the board
-type Row       = [Color]
-
---  Answer is a pair where the left component represents the number of black pegs and
---  the right component represents the number of white pegs
---
--- We find a black peg for each correct guess (correct color and position)
--- We find a white peg for each peg that belongs in the solution but is incorrectly positioned.
-
-type Answer    = (Int, Int)
-
--- End answer should be (size, 0) if the guess is correct
--- where size is the length of the row and 0 is the number of white pegs
-
--- A board is represented as a list of rows and answers
-type Board     = [(Row, Answer)]
-
+-- Print the board
 printBoard :: Board -> IO ()
-printBoard board = let print [] = putStr ("\n")
-                       print (x:xs) = do putStr (show x)
-                                         putStr ("\n")
-                                         print xs
-                   in do putStr ("\n BOARD\n")
-                         print board
+printBoard board = 
+    let print []     = putStrLn ""
+        print (x:xs) = do putStrLn (show x)
+                          print xs
+    in do putStrLn "\nBOARD"
+          print board
 
-
+-- Validate a guess
 validGuess :: Int -> Colors -> Row -> Bool
-validGuess size colors guess
-        = length guess == size && and [elem x colors | x <- guess]
+validGuess size colors guess =
+    length guess == size && all (`elem` colors) guess
 
-
-
+-- Compare a guess against the hidden row
 answerIs :: Row -> Row -> Answer
-answerIs answer guess
-        = (black, white)
-          where
-                black = length [ g | (g,a) <- zip guess answer, g == a]
-                white = length (mintersect guess answer) - black
+answerIs answer guess = (black, white)
+  where
+    black = length [g | (g, a) <- zip guess answer, g == a]
+    white = length (mintersect guess answer) - black
 
+-- Find intersection of two lists
 mintersect :: Eq a => [a] -> [a] -> [a]
-mintersect [] ys  = []
+mintersect [] ys = []
 mintersect (x:xs) ys
-        | elem x ys   = x:mintersect xs (mdelete x ys)
-        | otherwise   = mintersect xs ys
+    | x `elem` ys = x : mintersect xs (mdelete x ys)
+    | otherwise   = mintersect xs ys
 
+-- Delete an element from a list
 mdelete :: Eq a => a -> [a] -> [a]
-mdelete x [] = []
+mdelete _ [] = []
 mdelete x (y:ys)
-        | x == y    = ys
-        | otherwise = y:mdelete x ys
+    | x == y    = ys
+    | otherwise = y : mdelete x ys
 
--- mastermind using some "AI" player
-mmind  ::
-     Int                                       -- Length of each row
-     -> Colors                                 -- Set of colors
-     -> (Int -> Colors -> Colors -> Bool)      -- Checks if guess is valid
-     -> (Colors -> Colors -> Answer)           -- Compares guess against hidden row
-     -> (Int -> Colors -> Board -> IO Row)        -- Some "AI" player
-     -> IO [(Colors, Answer)]
-mmind size colors validGuess answerIs player =
-       let answerIsIO guess hiddenrow = return (answerIs guess hiddenrow)
-           buildboardIO board guess answerIs = return (board ++ [(guess,answerIs)])
-           initialboard = []
-           playitIO hiddenrow board =
-                           do newguess <- player size colors board
-                              if validGuess size colors newguess then return ()
-                               else putStr ("\n Your player doesn't produce correct guesses\n")
-                              newanswerIs <- answerIsIO newguess hiddenrow
-                              newboard <- buildboardIO board newguess newanswerIs
-                              printBoard newboard
-                              if newanswerIs == (size,0) then (return newboard)
-                               else (playitIO hiddenrow newboard)
-        in do hiddenrow <- randomRowIO size colors
-              playitIO hiddenrow initialboard
+-- Mastermind game logic
+mmind :: Int -> Colors -> (Int -> Colors -> Row -> Bool) 
+      -> (Row -> Row -> Answer) 
+      -> (Int -> Colors -> Board -> IO Row) 
+      -> IO Board
+mmind size colors validGuess answerIs player = 
+    let 
+        answerIsIO guess hiddenrow = return (answerIs guess hiddenrow)
+        buildboardIO board guess answer = return (board ++ [(guess, answer)])
+        initialboard = []
 
+        playitIO hiddenrow board = do
+            newguess <- player size colors board
+            if validGuess size colors newguess 
+                then return ()
+                else putStrLn "\nYour player doesn't produce correct guesses"
+            newanswer <- answerIsIO newguess hiddenrow
+            newboard <- buildboardIO board newguess newanswer
+            printBoard newboard
+            if newanswer == (size, 0) 
+                then return newboard
+                else playitIO hiddenrow newboard
+    in do
+        hiddenrow <- randomRowIO size colors
+        playitIO hiddenrow initialboard
 
-randomRowIO :: Int -> Colors -> IO Colors
+-- Generate a random row
+randomRowIO :: Int -> Colors -> IO Row
 randomRowIO size colors = do
-     xs <- mapM (\_ -> randomRIO (0::Int, size-1)) [1..size]
-     return [colors!!x | x <- xs]
+    indices <- mapM (\_ -> randomRIO (0, length colors - 1)) [1..size]
+    return [colors !! i | i <- indices]
 
-
--- Implements a smarter player using a strategy to narrow down guesses
-
+-- Smart player logic
 player :: Int -> Colors -> Board -> IO Row
 player size colors board = do
-  let allPossibleRows = sequence (replicate size colors) 
-      remainingRows = filter (`isConsistentWithBoard` board) allPossibleRows 
-  return $ head remainingRows
+    let allPossibleRows = sequence (replicate size colors)
+        remainingRows = filter (`isConsistentWithBoard` board) allPossibleRows
+    return $ head remainingRows
 
--- Helper function to check if a row is consistent with the board
+-- Check if a row is consistent with the board
 isConsistentWithBoard :: Row -> Board -> Bool
 isConsistentWithBoard row board =
-  all (\(guess, answer) -> answerIs row guess == answer) board
+    all (\(guess, answer) -> answerIs row guess == answer) board
 
-
+-- Play the game
 play_mm = mmind 4 colors validGuess answerIs player
 
+-- Main function
 main = play_mm
