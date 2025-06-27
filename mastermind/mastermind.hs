@@ -83,8 +83,9 @@ randomRowIO size colors = do
 player :: Int -> Colors -> Board -> IO Row
 player size colors board = do
     let allPossibleRows = sequence (replicate size colors)
-        remainingRows = filter (`isConsistentWithBoard` board) allPossibleRows
-    return $ head remainingRows
+    return $ case find (`isConsistentWithBoard` board) allPossibleRows of
+        Just row -> row
+        Nothing  -> error "No consistent row found"
 
 -- Check if a row is consistent with the board
 isConsistentWithBoard :: Row -> Board -> Bool
